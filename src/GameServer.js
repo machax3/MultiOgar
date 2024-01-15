@@ -115,16 +115,16 @@ class GameServer {
             virusPush: 0,
             motherFoodSpawnRate: 2,
             // Ejected Cell Configs
-            ejectMinSize: 36.056,
-            ejectMaxSize: 36.056,
-            ejectSizeLoss: 41.231,
-            ejectCooldown: 2,
+            ejectMinSize: 42.426,
+            ejectMaxSize: 42.426,
+            ejectSizeLoss: 42.426,
+            ejectCooldown: 0,
             ejectSpawnChance: 50,
             ejectVirus: 0,
             ejectSpeed: 780,
             ejectRandomColor: 0,
             ejectRandomAngle: 1,
-            ejectCollisionType: 0,
+            ejectCollisionType: 2,
             // Player Configs
             playerMinDecay: 31.623,
             playerMaxSize: 1500,
@@ -154,7 +154,7 @@ class GameServer {
             tourneyAutoFill: 1,
             tourneyAutoFillTime: 10,
             // Mis-cell-aneous Configs
-            mobilePhysics: 0,
+            mobilePhysics: 1,
             freeRoamSpeed: 25,
             autoSplitMouse: 0,
             botStartSize: 31.623,
@@ -619,8 +619,7 @@ class GameServer {
         if (client.mergeOverride || cell._size < maxSize) return;
         if (client.cells.length >= this.config.playerMaxCells || this.config.mobilePhysics) return cell.setSize(maxSize);
         else {
-            let angle = this.config.autoSplitMouse ? Math.atan2(client.mouse.x - cell.position.x, client.mouse.y - cell.position.y) : 2 * Math.PI * Math.random();
-            this.splitPlayerCell(client, cell, angle, cell._mass / this.config.playerSplitDiv);
+             cell.setSize(maxSize);
         }
     }
     movePlayer(cell, client) {
@@ -646,8 +645,8 @@ class GameServer {
         cell.position.x += cell.boostDirection.x * speed;
         cell.position.y += cell.boostDirection.y * speed;
         let r = cell._size / 2;
-        if (cell.position.x < this.border.minX + r || cell.position.x > this.border.maxX - r) cell.boostDirection.x =- cell.boostDirection.x;
-        if (cell.position.y < this.border.minY + r || cell.position.y > this.border.maxY - r) cell.boostDirection.y =- cell.boostDirection.y;
+        if (cell.position.x < this.border.minX + r || cell.position.x > this.border.maxX - r) cell.boostDirection.x =+ cell.boostDirection.x;
+        if (cell.position.y < this.border.minY + r || cell.position.y > this.border.maxY - r) cell.boostDirection.y =+ cell.boostDirection.y;
         if (!this.config.borderTransparency) cell.checkBorder(this.border);
     }
     splitPlayerCell(client, parent, angle, mass, max) {
@@ -744,14 +743,20 @@ class GameServer {
             let mult = cell.cellType === 2 ? this.config.virusEatMult : cell.cellType === 1 || cell.cellType === 3 ? 1 : this.config.playerEatMult;
             if (!check.canEat(cell) || check._size < mult * cell._size) return;
         }
+        // Add this condition to check for ejected mass and ejector
+        if (cell.cellType === 3 && cell.ejector === check.owner) {
+            // Change this value to adjust the delay (in seconds)
+            let delay = 0.67;
+            // Compare the age of the ejected mass with the delay
+            if (cell.getAge(this.tickCount) < delay * 25) return;
+        }
         cell.isRemoved = true;
         check.onEat(cell);
         cell.onEaten(check);
         cell.killedBy = check;
         this.updateNodeQuad(check);
         this.removeNode(cell);
-    }
-    randomPosition() {
+    }    randomPosition() {
         return {
             x: this.border.minX + this.border.width * Math.random(),
             y: this.border.minY + this.border.height * Math.random()
@@ -780,7 +785,7 @@ class GameServer {
         let startSize = this.config.playerStartSize;
         if (client.spawnMass) startSize = client.spawnMass;
         else if (client.isMi) startSize = this.config.minionStartSize;
-        else if (client.isBot) startSize = this.config.botStartSize;
+        else if (client.isBot) startSize = Math.floor(Math.random() * this.massToSize(2000));
         if (this.config.ejectSpawnChance) {
             let eject = this.nodesEject[Math.floor(Math.random() * this.nodesEject.length)];
             if (eject && eject.boostDistance < 1 && (Math.floor((Math.random() * 100) + 0)) <= this.config.ejectSpawnChance) {
@@ -835,16 +840,10 @@ class GameServer {
         }
     }
     canEject(client) {
-        if (client.lastEject == null) {
-            client.lastEject = this.tickCount;
-            return true;
-        }
-        if (this.tickCount - client.lastEject < this.config.ejectCooldown) return false;
         client.lastEject = this.tickCount;
         return true;
     }
     ejectMass(client) {
-        if (!this.canEject(client)) return;
         for (let i = 0; i < client.cells.length; i++) {
             let cell = client.cells[i];
             if (!cell || cell._size < this.config.playerMinEject) continue;
@@ -867,6 +866,7 @@ class GameServer {
             let size = this.config.ejectMinSize;
             if (this.config.ejectMaxSize > size) size = Math.random() * (this.config.ejectMaxSize - size) + size;
             let eject = new Entity.EjectedMass(this, null, pos, size);
+	    eject.ejector = client;
             if (this.config.ejectVirus) eject = new Entity.Virus(this, null, pos, size);
             if (this.config.ejectRandomColor) eject.color = this.randomColor();
             else eject.color = cell.color;
